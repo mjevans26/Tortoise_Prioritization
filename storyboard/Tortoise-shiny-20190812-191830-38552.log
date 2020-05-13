@@ -1,0 +1,51 @@
+
+Listening on http://127.0.0.1:38552
+
+
+
+processing file: index.Rmd
+
+Attaching package: 'dplyr'
+
+The following objects are masked from 'package:stats':
+
+    filter, lag
+
+The following objects are masked from 'package:base':
+
+    intersect, setdiff, setequal, union
+
+Loading required package: ggplot2
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+Loading required package: sp
+
+Attaching package: 'raster'
+
+The following object is masked from 'package:plotly':
+
+    select
+
+The following object is masked from 'package:dplyr':
+
+    select
+
+Loading required package: viridisLite
+output file: /tmp/RtmpyZYucO/index.knit.md
+
+
+Output created: /tmp/RtmpyZYucO/file56fd698d749.html
+-su: line 1: 22269 Killed                  R --no-save --slave -f \/opt\/shiny-server\/R\/SockJSAdapter\.R

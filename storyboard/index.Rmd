@@ -1,0 +1,281 @@
+---
+title: "Desert Tortoise Prioritization"
+author: "Michael Evans, Lindsay Rosa & Jacob Malcom"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    storyboard: true
+    ##vertical_layout: scroll
+    #orientation: rows
+    css: storyboard.css
+    social: menu
+    df_print: paged
+    navbar:
+    - {title: "", icon: "fa-question-circle fa-lg", align: right, href: "mailto:esa@defenders.org?subject=Tortoise Prioritization"}
+    - {title: "", icon: "fa-github fa-lg", align: right, href: "https://github.com/mjevans26/NMFSs7"}
+    - {title: "CCI", align: right, href: "https://defenders-cci.org"}
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(dplyr)
+# library(maps)
+library(leaflet)
+library(plotly)
+library(raster)
+library(reshape2)
+library(shiny)
+library(stringr)
+library(viridis)
+
+#load("C:/Users/mevans/OneDrive - Defenders of #Wildlife/repos/Tortoise_Prioritization/data/data.RData")
+mutated <- readRDS('data/data.rds')
+source("functions.R")
+
+#slider for the example plot
+slider <- sliderInput(
+             "slopes",
+             label = 'Slope',
+             min = 1,
+             max = 5,
+             value = 2,
+             step = 1
+           )
+
+output$example_plot <- renderPlotly({
+  plot_example(input$slopes)
+})
+
+output$bigplot <- renderPlotly({
+  initial <- plot_grid(2,2)
+  subplot(initial, nrows = 5,
+          heights = c(0.22, 0.22, 0.22, 0.22, 0.10),
+            widths = c(0.10, 0.22, 0.22, 0.22, 0.22),
+            #margin = c(0, 0.01, 0, 0.01),
+            shareX = FALSE,
+            shareY = FALSE)%>%
+      layout(
+        xaxis23 = list(
+          title = "Connectivity",
+          titlefont = list(color = 'black')
+        ),
+        yaxis11 = list(
+          title = 'Suitability',
+          titlefont = list(color = 'black')
+        )
+      )
+})
+
+
+#Inputs to update value matrix
+suit_slope <-   sliderInput("suit", label = "Suitability slope:",
+              value = 2, min = 0, max = 5, step = 1, width = '150px')
+
+conn_slope <- sliderInput("conn", label = "Connectivity slope:",
+              value = 2, min = 0, max = 5, step = 1, width = '150px')
+
+update <- actionButton("update", "Update Values")
+
+
+observeEvent(input$update, {
+  suit <- isolate({input$suit})
+  conn <- isolate({input$conn})
+  #dat <- rnorm(n = 100, mean = suit, sd = conn)
+  test <- plot_grid(suit, conn)
+  
+  output$bigplot <- renderPlotly({
+    subplot(test, nrows = 5, 
+            heights = c(0.22, 0.22, 0.22, 0.22, 0.10),
+            widths = c(0.10, 0.22, 0.22, 0.22, 0.22),
+            #margin = c(0, 0.01, 0, 0.01),
+            shareX = FALSE,
+            shareY = FALSE)%>%
+      layout(
+        xaxis23 = list(
+          title = "Connectivity",
+          titlefont = list(color = 'black')
+        ),
+        yaxis11 = list(
+          title = 'Suitability',
+          titlefont = list(color = 'black')
+        )
+      )
+    })
+
+})
+
+#Create blank leaflet basemap zoomed and centered on to Las Vegas
+output$map <- renderLeaflet({
+    leaflet()%>%
+      addProviderTiles(providers$Esri.OceanBasemap)%>%
+      addProviderTiles(providers$OpenMapSurfer.AdminBounds)%>%
+      addLegend(colors = str_remove(viridis(3), 'FF'),
+                labels = c("Low", "Medium", "High"),
+                title = 'Importance',
+                position = 'topright')%>%
+      setView(lng = -115.1398, lat = 36.1699, zoom = 8)
+  })
+
+#Inputs to update leaflet map
+suit_fxn <- selectInput('suit_fxn', label = "Suitability function:",
+                        choices = c("Exponential" = 'exp',
+                                    "Logistic" = 'logistic',
+                                    "Linear" = 'linear',
+                                    "Logarithmic" = 'log'),
+                        width = '150px'
+)
+
+suit2 <- sliderInput("suit2",
+                      label = "Suitability slope:",
+                      value = 2, min = 0, max = 5, step = 1,
+                     width = '150px', ticks = FALSE
+                      )
+
+conn2 <- sliderInput("conn2", label = "Connectivity slope:",
+                  value = 2, min = 0, max = 5, step = 1,
+                  width = '150px', ticks = FALSE)
+
+conn_fxn <- selectInput('conn_fxn', label = "Connectivity function:",
+                  choices = c("Exponential" = 'exp',
+                              "Logistic" = 'logistic',
+                              "Linear" = 'linear',
+                              "Logarithmic" = 'log'),
+                  width = '150px'
+)
+
+action <- actionButton("raster", "Map!")
+
+bins <- leaflet::colorBin('viridis', domain = seq(0,2,0.01), 2)
+#observer to update the leaflet map when slopes and weights are changed
+observeEvent(input$raster, {
+  suit <- isolate({input$suit2})
+  conn <- isolate({input$conn2})
+  suit_fxn <- isolate({input$suit_fxn})
+  conn_fxn <- isolate({input$conn_fxn})
+  mat <- make_value_matrix(mutated, suit, conn, suit_fxn, conn_fxn)
+  r <- rasterFromXYZ(mat, crs = CRS("+init=epsg:4269"))%>%
+    aggregate(fact = 10)
+  
+  leafletProxy("map")%>%
+    addRasterImage(r, project = FALSE, colors = viridis(3))
+  # output$map <- renderPlot({
+  #   plot(r, breaks = round(seq(0,2,2/3), 2))
+  #   map('state', regions = 'Nevada', col = 'grey', fill = TRUE, add = TRUE)
+  #   plot(r, breaks = round(seq(0,2,2/3), 2), col = viridis(3), add = TRUE)
+  #   title("Tortoise habitat within BLM variance lands\nin Southern Nevada")
+  # })
+})
+
+```
+
+### A New Approach to Habitat Prioritization
+
+```{r intro, echo = FALSE}
+fluidPage(
+#  fluidRow(
+    column(6,
+           h4("Introduction"),
+            p("Conservation prioritization seeks to determine which places are most important to protect, often using maps of habitat suitability, connectivity, or other ecological measures. But which areas are most important to tortoises? How important does an area need to be to warrant protections? This app demonstrates an approach to habitat prioritization using the endangered Mojave dersert tortoise as an example."),
+           br(),
+           p("Federal legislation is being drafted to change the designation of public lands in Clark County, NV - home to Las Vegas and in the heart of Mojave desert tortoise range. Our proposed aproach is designed to be maximally transparent, explicit, and repeatable. The process consists of three steps:"),
+           br(),
+           tags$ol(
+             tags$li("Decide ahead of time how we value habitat"),
+             tags$li("Convert habitat measures to conservaion 'value'"),
+             tags$li("Map value across the landscape")
+           )
+           ),
+    column(6,
+           img(src = 'Box1.png', width = 500, height = 400,
+               alt = 'Conceptual diagram of the proposed habitat prioritization process')
+    )
+#  )
+)
+```
+
+### Defining How We Value Habitat
+
+```{r curves, echo = FALSE}
+fluidPage(
+  fluidRow(
+    inputPanel(slider, style = 'display: inline-block;'),
+    style = "text-align: center;"
+  ),
+  fluidRow(
+    plotlyOutput('example_plot')
+  )
+)
+```
+
+***
+
+<h4>How do we value habitat?</h4>
+First, we define up-front how we value tortoise habitat suitability and connectivity. We do this before looking at maps of habitat to avoid biasing our choices. 
+
+The graph at left shows a ways we might theoretically value different measures of habitat.  For instance, an  exponential function (orange) assigns a low 'Value' score to all but the highest levels suitability or connectivity. Conversely, the logarithmic function (purple) assigns a relatively high Value to most levels of habitat suitaiblity or connectivity.
+
+We can fine tune these functions by adjusting their slope. For instance, a logarithmic function using a slope of 5 will more quickly rise to an Value of 1 than one with a slope of 2. Use the slider to see how the curve shapes change.
+
+### Assigning 'Value' to Habitat
+
+```{r matrix, echo = FALSE}
+fluidPage(
+  fluidRow(
+    inputPanel(
+      suit_slope,
+      conn_slope,
+      update,
+      style = 'display: inline-block;'
+    ), style = 'text-align: center;'
+  ),
+  fluidRow(
+    plotlyOutput('bigplot')
+  )
+
+)
+
+```
+
+***
+
+<h4>Assigning Value to habitat</h4>
+We may value different ecological measures differnetly. In the case of the tortoise, we might choose different functions and slopes to convert habitat sutability and connectivity to Value. Together, the outputs are combined to create a surface of possible Values for every possible combination of suitability and connectivity.
+
+Value is standardized, and the range of scores will always be 0 to 2. That lets us apply a consistent set of thresholds if we need to divide areas into bins (e.g. 'High', 'Medium' and 'Low').
+
+Use the selectors to change the slopes of the valuation functions for habitat suitability and connectivity, and see how these choices create the surface of possible Values. With each different surface, the number of observations falling into consistent high, medium, and low conflict bins will change.
+
+### Back to the Map
+
+<iframe src='https://defendersofwildlifegis.users.earthengine.app/view/tortoisevalues' style='border:none;', height = 100% width = 100%></iframe>
+```{r map, echo = FALSE}
+# #fillPage(
+# #  fluidRow(
+#     inputPanel(
+#            suit_fxn,
+#            suit2,
+#           conn_fxn,
+#            conn2,
+#           br(),
+#            action)
+#   
+# #  fluidRow(
+# #    div(
+# 
+#     leafletOutput('map', width = '100%', height = '100%')
+# #    )
+# #  )
+#)
+#tags$iframe(src = url('https://defendersofwildlifegis.users.earthengine.app/view/tortoisevalues'))
+
+```
+
+***
+
+<h4>Mapping importance</h4>
+Now we map these Values onto the landscape.  Once we select the functions and slopes we want to use to convert habitat suitability and connectivity to Value, we calculate this score in every place on the map based on the observed suitability and connectivity.
+
+Use the dropdown menus and sliders to see how the map of conservation Value changes. 
+Note: <b><em>Map calculations will take a moment to update</em></b>

@@ -1,0 +1,198 @@
+---
+title: "Desert Tortoise Habitat Prioritization"
+author: "Michael Evans, Lindsay Rosa, Jacob Malcom"
+date: "July 1, 2019"
+output: 
+  html_document:
+    css: custom.css
+    navbar:
+    - {title: "CCI", align: left, href: "https://cci-dev.org"}
+    - {title: "Defenders", align: left, href: "http://www.defenders.org"}
+    - {title: "", icon: "fa-question-circle fa-lg", align: right, href: "mailto:esa@defenders.org?subject=Desert tortoise app"}
+    - {title: "", icon: "fa-github fa-lg", align: right, href: "https://github.com/mjevans26/"}
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(dplyr)
+# library(maps)
+library(leaflet)
+library(plotly)
+library(raster)
+library(reshape2)
+library(shiny)
+library(viridis)
+
+#load("C:/Users/mevans/OneDrive - Defenders of #Wildlife/repos/Tortoise_Prioritization/data/data.RData")
+mutated <- readRDS('data/data.rds')
+source("functions.R")
+
+example_plot <- plot_ly()%>%
+  add_lines(x = curve(sigmoid(x, x0 = 0.5, k = 10))$x,
+            y = curve(sigmoid(x, x0 = 0.5, k = 10))$y,
+            name = 'Logistic',
+            line = list(color = 'blue'))%>%
+  add_lines(x = curve(relu(x, 2), from = 0, to = 1)$x,
+            y = curve(relu(x, 2), from = 0, to = 1)$y,
+            name = "Linear",
+            line = list(color = 'black'))%>%
+  add_lines(x = curve(x^5, from = 0, to = 1)$x,
+            y = curve(x^5, from = 0, to = 1)$y,
+            name = 'Exponential',
+            line = list(color = 'orange'))%>%
+  add_lines(x = curve(x^0.2, from = 0, to = 1)$x,
+            y = curve(x^0.2, from = 0, to = 1)$y,
+            name = 'Logarithmic',
+            line = list(color = 'purple'))%>%
+  layout(xaxis = list(title = 'Connectivity/Suitability',
+                      titlefont = list(size = 14, color = 'black')),
+         yaxis = list(title = 'Value',
+                      titlefont = list(size = 14, color = 'black')),
+         legend = list(x = 0.8, y = 0.1))
+
+```
+
+### Prioritization
+
+The Bureau of Land Management is conducting a programatic environmental assessment for the Southern Nevada District that will identify conflicts between solar energy development and other public land uses & resources.  Public lands will ultimately be categorized into different levels of conflict.
+
+Typically, prioritization is achieved by looking at the distribution of habitat on a map and dividing these observed values into 'bins.'  In the interactive app below, we present a more transparent and explicit way of translating the values into scores. The process consists of three steps:
+
+1. Defining how we think tortoise habitat should be valued
+2. Converting measures like habitat suitability to a standardized 'Value'
+3. Mapping those values
+
+### How do we value habitat?
+
+```{r example_plot, echo = FALSE}
+fluidPage(
+  fluidRow(
+    column(6, 
+           br(),
+           p("Prioritizing land for desert tortoise conservation in a transparent, objective, and repeatable way requires defining up-front how we value tortoise habitat. Stakeholders should do this before looking at a map to avoid biasing their choices based on pre-existing preferences for certain areas."),
+           br(),
+           p("The graph at right shows a few examples of functions that represent different theoretical valuations of Mojave desert tortoise habitat suitability and connectivity.  For instance, the  exponential relationship (orange) places a low value on all areas except those with only the most suitable habitat. Conversely, the logrithmic function (purple) places a relatively high value on most levels of habitat suitaiblity or connectivity.")
+    ),
+    column(6, example_plot)
+  )
+)
+```
+
+After defining how they think tortoise habitat suitability and connectivity should be valued, species experts, land managers, and developers can fine tune by adjusting the slope of these relationships using a weighting factor.  For instance, a logarithmic function using a slope of 5 will more quickly rise to a value of one than with a slope of 2.  Use the selectors below to explore how different weights affect the shape of valuation functions for habitat suitability and connectivity, and how these are combined to create the surface of possible value.
+
+```{r inputs, echo=FALSE}
+inputPanel(
+  numericInput("suit", label = "Suitability slope:",
+              value = 2, min = 0, max = 5, step = 1),
+  
+  numericInput("conn", label = "Connectivity slope:",
+              value = 2, min = 0, max = 5, step = 1),
+  
+  actionButton("update", "Update Values")
+)
+```
+
+```{r bigplot, echo = FALSE}
+observeEvent(input$update, {
+  suit <- isolate({input$suit})
+  conn <- isolate({input$conn})
+  #dat <- rnorm(n = 100, mean = suit, sd = conn)
+  test <- plot_grid(suit, conn)
+  
+  output$bigplot <- renderPlotly({
+    subplot(test, nrows = 5, 
+            heights = c(0.22, 0.22, 0.22, 0.22, 0.10),
+            widths = c(0.10, 0.22, 0.22, 0.22, 0.22),
+            #margin = c(0, 0.01, 0, 0.01),
+            shareX = FALSE,
+            shareY = FALSE)%>%
+      layout(
+        xaxis23 = list(
+          title = "Connectivity",
+          titlefont = list(color = 'black')
+        ),
+        yaxis11 = list(
+          title = 'Suitability',
+          titlefont = list(color = 'black')
+        )
+      )
+    })
+
+})
+
+plotlyOutput('bigplot')
+```
+
+### Back to the real world
+
+Now it's time to translate these value surfaces back to the landscape.  Once we've selected the functions and weights we want to use to assign value to habitat suitability and connectivity, it is straightforward to transform the observed values on a map, and delineate Low, Medium, and High value (i.e. conflict) zones.
+
+```{r inputs2, echo=FALSE}
+fluidPage(
+  style = "background-color: #f5f5f5;",
+  fluidRow(
+    column(5,
+      selectInput('suit_fxn', label = "Suitability function:",
+                  choices = c("Exponential" = 'exp',
+                              "Logistic" = 'logistic',
+                              "Linear" = 'linear',
+                              "Logarithmic" = 'log')
+                  )
+    ),
+    column(5,
+           numericInput("suit2", label = "Suitability slope:",
+                       value = 2, min = 0, max = 5, step = 1)
+    )
+  ),
+  fluidRow(
+    column(5,
+           selectInput('conn_fxn', label = "Connectivity function:",
+                  choices = c("Exponential" = 'exp',
+                              "Logistic" = 'logistic',
+                              "Linear" = 'linear',
+                              "Logarithmic" = 'log')
+           )
+    ),
+    column(5,
+           numericInput("conn2", label = "Connectivity slope:",
+                  value = 2, min = 0, max = 5, step = 1)
+    ),
+    column(2,
+           actionButton("raster", "Map!")
+    )
+  )
+)
+```
+
+```{r raster, echo = FALSE}
+output$map <- renderLeaflet({
+    leaflet()%>%
+      addProviderTiles(providers$Esri.OceanBasemap)%>%
+      addProviderTiles(providers$OpenMapSurfer.AdminBounds)%>%
+      setView(lng = -115.1398, lat = 36.1699, zoom = 8)
+  })
+
+observeEvent(input$raster, {
+  suit <- isolate({input$suit2})
+  conn <- isolate({input$conn2})
+  suit_fxn <- isolate({input$suit_fxn})
+  conn_fxn <- isolate({input$conn_fxn})
+  mat <- make_value_matrix(mutated, suit, conn, suit_fxn, conn_fxn)
+  r <- rasterFromXYZ(mat, crs = CRS("+init=epsg:4269"))%>%
+    aggregate(fact = 3)
+  
+  leafletProxy("map")%>%
+    addRasterImage(r, project = FALSE)
+  # output$map <- renderPlot({
+  #   plot(r, breaks = round(seq(0,2,2/3), 2))
+  #   map('state', regions = 'Nevada', col = 'grey', fill = TRUE, add = TRUE)
+  #   plot(r, breaks = round(seq(0,2,2/3), 2), col = viridis(3), add = TRUE)
+  #   title("Tortoise habitat within BLM variance lands\nin Southern Nevada")
+  # })
+})
+
+leafletOutput('map', height = '600px')
+```
+
